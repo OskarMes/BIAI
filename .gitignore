@@ -1,0 +1,14 @@
+﻿################################################################################
+# Ten plik .gitignore został utworzony automatycznie przez Microsoft(R) Visual Studio.
+################################################################################
+
+/VampireGame/.vs/VampireGame/FileContentIndex
+/.vs/BIAI/FileContentIndex/287dbc7a-5b07-4ad0-87b5-ae43cdd1d4f9.vsidx
+/.vs/BIAI/v17/.wsuo
+/.vs/BIAI/v17/DocumentLayout.backup.json
+/.vs/BIAI/v17/DocumentLayout.json
+/.vs/ProjectSettings.json
+/.vs/slnx.sqlite
+/VampireGame/.vs/VampireGame/v17/.suo
+/VampireGame/.vs/VampireGame/v17/DocumentLayout.backup.json
+/VampireGame/.vs/VampireGame/v17/DocumentLayout.json
