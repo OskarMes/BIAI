@@ -67,6 +67,32 @@ except pygame.error as e:
     print(f"Błąd ładowania obrazka gracza '{player_filename}': {e}")
     player_image_original = None
 
+# --- Load Enemy Image ---
+enemy_filename = "Enemy.png"
+enemy_image_original = None
+try:
+    enemy_path = os.path.join(assets_dir, enemy_filename)
+    if not os.path.exists(enemy_path):
+        print(f"Błąd: Plik wroga '{enemy_filename}' nie znaleziony. Używam czerwonego kwadratu.")
+        # Tworzymy zastępczy kwadrat jako fallback
+        enemy_image_original = pygame.Surface((20, 20))
+        enemy_image_original.fill(RED)
+    else:
+        enemy_image_original = pygame.image.load(enemy_path).convert_alpha()
+        print(f"Załadowano wroga: {enemy_filename} ({enemy_image_original.get_width()}x{enemy_image_original.get_height()})")
+        # Opcjonalne Skalowanie Wroga (odkomentuj i dostosuj scale_factor_enemy jeśli potrzebne)
+        scale_factor_enemy = 0.4 # Np. 60%
+        new_width_enemy = int(enemy_image_original.get_width() * scale_factor_enemy)
+        new_height_enemy = int(enemy_image_original.get_height() * scale_factor_enemy)
+        enemy_image_original = pygame.transform.smoothscale(enemy_image_original, (new_width_enemy, new_height_enemy))
+        print(f"Przeskalowano wroga do: {new_width_enemy}x{new_height_enemy}")
+
+except pygame.error as e:
+    print(f"Błąd ładowania obrazka wroga '{enemy_filename}': {e}. Używam czerwonego kwadratu.")
+    enemy_image_original = pygame.Surface((20, 20))
+    enemy_image_original.fill(RED)
+
+
 # Game settings
 #DOSTOSOWAC USTAWIENIA TAK BY GRA BYLA TRUDNA ALE WYKONYWALNA
 # czas gry powinien byc 3 lub 5 min tak zeby byl czas na prezentacje
@@ -208,26 +234,26 @@ class Bullet:
         return not (0 <= self.x <= WIDTH and 0 <= self.y <= HEIGHT)
 
 class Enemy:
-    def __init__(self):
+    def __init__(self,image):
         # Spawn at random edge
         edge = random.choice(['top', 'bottom', 'left', 'right'])
-        if edge == 'top':
-            self.x = random.uniform(0, WIDTH)
-            self.y = 0
-        elif edge == 'bottom':
-            self.x = random.uniform(0, WIDTH)
-            self.y = HEIGHT
-        elif edge == 'left':
-            self.x = 0
-            self.y = random.uniform(0, HEIGHT)
-        else:
-            self.x = WIDTH
-            self.y = random.uniform(0, HEIGHT)
-        self.width = 20
-        self.height = 20
-        self.color = RED
+        if edge == 'top': self.x, self.y = random.uniform(0, WIDTH), -10 # Start lekko poza ekranem
+        elif edge == 'bottom': self.x, self.y = random.uniform(0, WIDTH), HEIGHT + 10
+        elif edge == 'left': self.x, self.y = -10, random.uniform(0, HEIGHT)
+        else: self.x, self.y = WIDTH + 10, random.uniform(0, HEIGHT) # right
+
+        self.image = image # Przypisz obrazek
+        if self.image:
+            self.width = self.image.get_width()
+            self.height = self.image.get_height()
+        else: # Fallback, chociaż obrazek fallback powinien być przekazany
+            self.width = 20
+            self.height = 20
+
         self.speed = enemy_speed
-        self.rect = pygame.Rect(int(self.x - self.width/2), int(self.y - self.height/2), self.width, self.height)
+        # Inicjalizuj Rect używając wymiarów obrazka i pozycji startowej
+        self.rect = pygame.Rect(0, 0, self.width, self.height)
+        self.rect.center = (int(self.x), int(self.y))
 
     def update(self, player):
         dx, dy = player.x - self.x, player.y - self.y
@@ -238,16 +264,15 @@ class Enemy:
         self.x += dx * self.speed
         self.y += dy * self.speed
         # Aktualizuj pozycję Rect
-        self.rect.centerx = int(self.x)
-        self.rect.centery = int(self.y)
+        self.rect.center = (int(self.x), int(self.y))
 
     def draw(self):
-        pygame.draw.rect(SCREEN, self.color, self.rect)
+        if self.image:
+            SCREEN.blit(self.image, self.rect.topleft)
 
     def collides_with_player(self, player):
-        # Używamy metody colliderect z Rect gracza i wroga
-        player_rect = player.get_rect()
-        return self.rect.colliderect(player_rect)
+        player_rect = player.get_rect() 
+        return self.rect.colliderect(player_rect) 
 
     def collides_with_bullet(self, bullet):
         bullet_rect = pygame.Rect(bullet.x - bullet.radius, bullet.y - bullet.radius, bullet.radius*2, bullet.radius*2)
@@ -265,6 +290,9 @@ def main():
         print("Nie można uruchomić gry - błąd ładowania obrazka gracza.")
         pygame.quit()
         sys.exit()
+    if enemy_image_original is None:
+         print("Krytyczny błąd: Nie udało się załadować obrazka wroga ANI fallbacku. Zamykanie.")
+         pygame.quit(); sys.exit()
 
     state = MENU
     player = Player(WIDTH // 2, HEIGHT // 2, player_image_original)
@@ -313,7 +341,7 @@ def main():
 
             # Spawn enemies
             if now - last_enemy_spawn >= enemy_spawn_interval:
-                enemies.append(Enemy())
+                enemies.append(Enemy(enemy_image_original))
                 last_enemy_spawn = now
 
             # Player movement and shooting
