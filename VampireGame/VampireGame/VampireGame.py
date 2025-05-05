@@ -242,29 +242,49 @@ class Enemy:
         elif edge == 'left': self.x, self.y = -10, random.uniform(0, HEIGHT)
         else: self.x, self.y = WIDTH + 10, random.uniform(0, HEIGHT) # right
 
-        self.image = image # Przypisz obrazek
-        if self.image:
-            self.width = self.image.get_width()
-            self.height = self.image.get_height()
-        else: # Fallback, chociaż obrazek fallback powinien być przekazany
-            self.width = 20
-            self.height = 20
+        self.original_image = image
+        if self.original_image:
+            self.image = self.original_image.copy() # Kopia do rotacji
+            # Zapisz bazowe wymiary do kolizji
+            self.base_width = self.original_image.get_width()
+            self.base_height = self.original_image.get_height()
+        else:
+            self.image = pygame.Surface((20, 20)); self.image.fill(RED) # Zapasowy obrazek
+            self.original_image = self.image
+            self.base_width = 20; self.base_height = 20
 
         self.speed = enemy_speed
-        # Inicjalizuj Rect używając wymiarów obrazka i pozycji startowej
-        self.rect = pygame.Rect(0, 0, self.width, self.height)
-        self.rect.center = (int(self.x), int(self.y))
+        self.angle_deg = 0 # Kąt obrotu
+        self.rect = self.image.get_rect(center=(int(self.x), int(self.y)))
 
     def update(self, player):
-        dx, dy = player.x - self.x, player.y - self.y
-        dist = math.hypot(dx, dy)
-        if dist == 0:
-            return
-        dx, dy = dx / dist, dy / dist
-        self.x += dx * self.speed
-        self.y += dy * self.speed
-        # Aktualizuj pozycję Rect
-        self.rect.center = (int(self.x), int(self.y))
+        dx_move, dy_move = player.x - self.x, player.y - self.y
+        dist = math.hypot(dx_move, dy_move)
+        if dist != 0:
+            dx_norm, dy_norm = dx_move / dist, dy_move / dist
+            self.x += dx_norm * self.speed
+            self.y += dy_norm * self.speed
+
+        # --- Rotacja ---
+        if self.original_image: # Obracaj tylko jeśli jest obrazek
+            # Wektor od wroga do gracza dla kąta
+            dx_angle = player.x - self.x
+            dy_angle = player.y - self.y
+
+            # Oblicz kąt (używamy -dy_angle dla osi Y Pygame)
+            angle_rad = math.atan2(-dy_angle, dx_angle)
+            angle_deg = math.degrees(angle_rad)
+
+            # Zastosuj korektę (załóżmy, że Enemy.png też patrzy w GÓRĘ)
+            # Jeśli patrzy w prawo, usuń "- 90"
+            rotation_angle = angle_deg - 90
+            self.angle_deg = rotation_angle # Zapisz kąt
+
+            # Obróć ORYGINALNY obrazek
+            self.image = pygame.transform.rotate(self.original_image, self.angle_deg)
+
+            # Zaktualizuj rect do RYSOWANIA, centrując go na (x, y)
+            self.rect = self.image.get_rect(center=(int(self.x), int(self.y)))
 
     def draw(self):
         if self.image:
@@ -285,7 +305,6 @@ def draw_text(text, font, color, surface, x, y):
 
 
 def main():
-
     if player_image_original is None:
         print("Nie można uruchomić gry - błąd ładowania obrazka gracza.")
         pygame.quit()
@@ -372,15 +391,13 @@ def main():
 
             # Draw everything
             player.draw()
-            # ### DODANO: Rysowanie collidera gracza (jako niebieski prostokąt) ###
             player_rect = player.get_rect()
-            pygame.draw.rect(SCREEN, (255,0,0), player_rect, 1) # Ostatni argument '1' oznacza grubość linii ramki
-            # ### KONIEC DODANO ###
+            pygame.draw.rect(SCREEN, (255,0,0), player_rect, 1) 
             for bullet in bullets:
                 bullet.draw()
             for enemy in enemies:
                 enemy.draw()
-
+        
             # Draw HUD
             draw_text(f"Kills: {kill_count}", font, WHITE, SCREEN, 10, 10)
             draw_text(f"Time: {elapsed//1000}s", font, WHITE, SCREEN, WIDTH - 150, 10)
