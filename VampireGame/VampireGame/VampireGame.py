@@ -1,4 +1,5 @@
 
+import os
 import pygame
 import sys
 import random
@@ -17,6 +18,37 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (200, 50, 50)
 GREEN = (50, 200, 50)
+
+# --- Load Background Tile ---
+tile_filename = "Ground_Tile_02_C.png"
+background_tile = None  # Zainicjuj jako None
+tile_width, tile_height = 0, 0
+
+try:
+    # Skonstruuj pełną ścieżkę do pliku obrazka
+    local_dir = os.path.dirname(__file__)
+    tile_path = os.path.join(local_dir, "Static", "Img", "Ground_Tile_02_C.png")
+
+    if not os.path.exists(tile_path):
+        print(f"Ostrzeżenie: Plik tła 'Static/Img/Ground_Tile_02_C.png' nie znaleziony w '{tile_path}'. Używam czarnego tła.")
+    else:
+       # Załaduj i skonwertuj obrazek
+        background_tile = pygame.image.load(tile_path).convert()
+        tile_width, tile_height = background_tile.get_size()
+        print(f"Załadowano tło: Static/Img/Ground_Tile_02_C.png ({tile_width}x{tile_height})")
+
+except pygame.error as e:
+    print(f"Błąd ładowania tła '{tile_filename}': {e}")
+    background_tile = None # Upewnij się, że jest None jeśli ładowanie zawiodło
+
+# --- Sprawdzenie czy ładowanie się powiodło ---
+if background_tile is None or tile_width == 0 or tile_height == 0:
+    # Jeśli ładowanie zawiodło lub wymiary są niepoprawne, nie próbuj kafelkować
+    use_tiling = False
+    print("Kafelkowanie tła wyłączone z powodu błędu ładowania lub nieprawidłowych wymiarów.")
+else:
+    use_tiling = True
+
 
 # Game settings
 #DOSTOSOWAC USTAWIENIA TAK BY GRA BYLA TRUDNA ALE WYKONYWALNA
@@ -175,10 +207,18 @@ def main():
         keys = pygame.key.get_pressed()
 
         if state == MENU:
-            draw_text("SIMPLE VAMPIRE SURVIVORS", large_font, WHITE, SCREEN, WIDTH//2 - 250, HEIGHT//2 - 50)
-            draw_text("Press ENTER to Start", font, WHITE, SCREEN, WIDTH//2 - 100, HEIGHT//2 + 20)
+            draw_text("SIMPLE VAMPIRE SURVIVORS", large_font, WHITE, SCREEN, WIDTH//2 - 350, HEIGHT//2 - 50)
+            draw_text("Press ENTER to Start", font, WHITE, SCREEN, WIDTH//2 - 110, HEIGHT//2 + 20)
 
         elif state == PLAYING:
+            if use_tiling:
+                # Rysuj kafelki
+                for x in range(0, WIDTH, tile_width):
+                    for y in range(0, HEIGHT, tile_height):
+                        SCREEN.blit(background_tile, (x, y))
+            else:
+                # Jeśli kafelki nie działają, wypełnij czarnym
+                SCREEN.fill(BLACK)
             now = pygame.time.get_ticks()
             elapsed = now - start_time
 
