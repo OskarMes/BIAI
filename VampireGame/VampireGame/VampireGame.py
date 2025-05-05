@@ -19,36 +19,53 @@ BLACK = (0, 0, 0)
 RED = (200, 50, 50)
 GREEN = (50, 200, 50)
 
+
+# --- Load Assets ---
+local_dir = os.path.dirname(__file__)
+assets_dir = os.path.join(local_dir, "Static", "Img")
+
 # --- Load Background Tile ---
 tile_filename = "Ground_Tile_02_C.png"
-background_tile = None  # Zainicjuj jako None
+background_tile = None
 tile_width, tile_height = 0, 0
-
 try:
-    # Skonstruuj pełną ścieżkę do pliku obrazka
-    local_dir = os.path.dirname(__file__)
-    tile_path = os.path.join(local_dir, "Static", "Img", "Ground_Tile_02_C.png")
-
+    tile_path = os.path.join(assets_dir, tile_filename)
     if not os.path.exists(tile_path):
-        print(f"Ostrzeżenie: Plik tła 'Static/Img/Ground_Tile_02_C.png' nie znaleziony w '{tile_path}'. Używam czarnego tła.")
+        print(f"Ostrzeżenie: Plik tła '{tile_filename}' nie znaleziony w '{tile_path}'. Używam czarnego tła.")
     else:
-       # Załaduj i skonwertuj obrazek
         background_tile = pygame.image.load(tile_path).convert()
         tile_width, tile_height = background_tile.get_size()
-        print(f"Załadowano tło: Static/Img/Ground_Tile_02_C.png ({tile_width}x{tile_height})")
-
+        print(f"Załadowano tło: {tile_filename} ({tile_width}x{tile_height})")
 except pygame.error as e:
     print(f"Błąd ładowania tła '{tile_filename}': {e}")
-    background_tile = None # Upewnij się, że jest None jeśli ładowanie zawiodło
+    background_tile = None
 
-# --- Sprawdzenie czy ładowanie się powiodło ---
-if background_tile is None or tile_width == 0 or tile_height == 0:
-    # Jeśli ładowanie zawiodło lub wymiary są niepoprawne, nie próbuj kafelkować
-    use_tiling = False
-    print("Kafelkowanie tła wyłączone z powodu błędu ładowania lub nieprawidłowych wymiarów.")
-else:
-    use_tiling = True
+use_tiling = background_tile is not None and tile_width > 0 and tile_height > 0
+if not use_tiling:
+     print("Kafelkowanie tła wyłączone z powodu błędu ładowania lub nieprawidłowych wymiarów.")
 
+# --- Load Player Image ---
+player_filename = "Player.png"
+player_image_original = None
+try:
+    player_path = os.path.join(assets_dir, player_filename)
+    if not os.path.exists(player_path):
+        print(f"Błąd: Plik gracza '{player_filename}' nie znaleziony w '{player_path}'.")
+    else:
+        player_image_original = pygame.image.load(player_path).convert_alpha()
+        print(f"Załadowano gracza: {player_filename} ({player_image_original.get_width()}x{player_image_original.get_height()})")
+        # ===  SKALOWANIE  === 
+        original_width = player_image_original.get_width()
+        original_height = player_image_original.get_height()
+        scale_factor = 0.4 # Przykładowy współczynnik skalowania (70%)
+        new_width = int(original_width * scale_factor)
+        new_height = int(original_height * scale_factor)
+        player_image_original = pygame.transform.smoothscale(player_image_original, (new_width, new_height))
+        print(f"Przeskalowano gracza do: {new_width}x{new_height}")
+
+except pygame.error as e:
+    print(f"Błąd ładowania obrazka gracza '{player_filename}': {e}")
+    player_image_original = None
 
 # Game settings
 #DOSTOSOWAC USTAWIENIA TAK BY GRA BYLA TRUDNA ALE WYKONYWALNA
@@ -56,7 +73,7 @@ else:
 enemy_spawn_interval = 1300  # milliseconds
 enemy_speed = 1.8
 bullet_speed = 7
-player_speed = 3
+player_speed = 2
 shoot_interval = 1000  # milliseconds
 #win_time = 5 * 60 * 1000  # 5 minutes in milliseconds
 win_time = 50 * 1000
@@ -72,25 +89,89 @@ VICTORY = 'victory'
 DEFEAT = 'defeat'
 
 class Player:
-    def __init__(self, x, y, radius=15):
-        self.x = x
-        self.y = y
-        self.radius = radius
-        self.color = GREEN
+    def __init__(self, x, y, image):
+        self.original_image = image # Przechowaj oryginalny obrazek
+        if self.original_image:
+            self.image = self.original_image.copy() # Aktualnie wyświetlany obrazek (na początku kopia oryginału)
+            # Pobierz wymiary z ORYGINALNEGO obrazka dla stałego collidera
+            self.width = self.original_image.get_width()
+            self.height = self.original_image.get_height()
+            self.x = x # Środek logiczny gracza
+            self.y = y
+            # Rect używany do RYSOWANIA (jego pozycja topleft będzie aktualizowana)
+            # Jego środek zawsze będzie (self.x, self.y)
+            self.rect = self.image.get_rect(center=(self.x, self.y))
+        else:
+            # Fallback (jeśli chcesz zachować możliwość gry bez obrazka)
+            print("OSTRZEŻENIE: Obrazek gracza nie załadowany, używam wartości domyślnych.")
+            self.original_image = None
+            self.image = None
+            self.width = 30
+            self.height = 30
+            self.x = x
+            self.y = y
+            # Tworzymy prosty rect dla fallbacku
+            self.rect = pygame.Rect(0, 0, self.width, self.height)
+            self.rect.center = (self.x, self.y)
+
         self.last_shot = pygame.time.get_ticks()
 
-    def draw(self):
-        pygame.draw.circle(SCREEN, self.color, (int(self.x), int(self.y)), self.radius)
-
     def move(self, keys):
-        if keys[pygame.K_w] and self.y - self.radius > 0:
-            self.y -= player_speed
-        if keys[pygame.K_s] and self.y + self.radius < HEIGHT:
-            self.y += player_speed
-        if keys[pygame.K_a] and self.x - self.radius > 0:
-            self.x -= player_speed
-        if keys[pygame.K_d] and self.x + self.radius < WIDTH:
-            self.x += player_speed
+        # Ta metoda tylko aktualizuje logiczne koordynaty środka x, y
+        half_w = self.width // 2 # Używamy stałych wymiarów collidera do granic
+        half_h = self.height // 2
+        delta_x, delta_y = 0, 0
+        if keys[pygame.K_w] and self.y - half_h > 0:
+            delta_y = -player_speed
+        if keys[pygame.K_s] and self.y + half_h < HEIGHT:
+            delta_y = player_speed
+        if keys[pygame.K_a] and self.x - half_w > 0:
+            delta_x = -player_speed
+        if keys[pygame.K_d] and self.x + half_w < WIDTH:
+            delta_x = player_speed
+
+        # Aktualizuj pozycję
+        self.x += delta_x
+        self.y += delta_y
+
+    # --- TO JEST METODA, KTÓREJ PRAWDOPODOBNIE BRAKUJE LUB JEST ŹLE UMIESZCZONA ---
+    def rotate(self):
+         if not self.original_image: return # Nic nie rób jeśli nie ma obrazka
+
+         # 1. Pobierz pozycję myszki
+         mx, my = pygame.mouse.get_pos()
+
+         # 2. Oblicz wektor od gracza do myszki
+         dx = mx - self.x
+         dy = my - self.y
+
+         # 3. Oblicz kąt używając atan2(y, x)
+         #    Używamy -dy, ponieważ oś Y w pygame rośnie w dół
+         angle_rad = math.atan2(-dy, dx)
+
+         # 4. Konwertuj na stopnie
+         angle_deg = math.degrees(angle_rad)
+
+         # 5. Obróć ORYGINALNY obrazek
+         #    Pamiętaj o dostosowaniu "- 90" jeśli Twój obrazek domyślnie nie patrzy w górę!
+         self.image = pygame.transform.rotate(self.original_image, angle_deg - 90)
+
+         # 6. Zaktualizuj rect dla RYSOWANIA, aby był wyśrodkowany w (self.x, self.y)
+         self.rect = self.image.get_rect(center=(self.x, self.y))
+    # --- KONIEC METODY ROTATE ---
+
+    def update(self, keys):
+        self.move(keys) # Najpierw zaktualizuj pozycję (self.x, self.y)
+        self.rotate()   # Następnie obróć obrazek i zaktualizuj self.rect do rysowania
+
+    def draw(self):
+        if self.image:
+            # Rysuj aktualny (potencjalnie obrócony) obrazek
+            # używając zaktualizowanego self.rect (który ma poprawny topleft)
+            SCREEN.blit(self.image, self.rect.topleft)
+        else:
+            # Fallback rysowania
+            pygame.draw.rect(SCREEN, (0, 255, 0), (self.x - self.width//2, self.y - self.height//2, self.width, self.height))
 
     def can_shoot(self):
         return pygame.time.get_ticks() - self.last_shot >= shoot_interval
@@ -99,11 +180,14 @@ class Player:
         self.last_shot = pygame.time.get_ticks()
         dx, dy = target_pos[0] - self.x, target_pos[1] - self.y
         dist = math.hypot(dx, dy)
-        if dist == 0:
-            dist = 1
+        if dist == 0: dist = 1
         dx, dy = dx / dist, dy / dist
         return Bullet(self.x, self.y, dx * bullet_speed, dy * bullet_speed)
 
+    def get_rect(self):
+        # Zwraca prostokąt collidera o STAŁYCH wymiarach (z oryginalnego obrazka)
+        return pygame.Rect(self.x - self.width // 2, self.y - self.height // 2, self.width, self.height)
+    
 class Bullet:
     def __init__(self, x, y, vx, vy, radius=5):
         self.x = x
@@ -143,6 +227,7 @@ class Enemy:
         self.height = 20
         self.color = RED
         self.speed = enemy_speed
+        self.rect = pygame.Rect(int(self.x - self.width/2), int(self.y - self.height/2), self.width, self.height)
 
     def update(self, player):
         dx, dy = player.x - self.x, player.y - self.y
@@ -152,23 +237,21 @@ class Enemy:
         dx, dy = dx / dist, dy / dist
         self.x += dx * self.speed
         self.y += dy * self.speed
+        # Aktualizuj pozycję Rect
+        self.rect.centerx = int(self.x)
+        self.rect.centery = int(self.y)
 
     def draw(self):
-        pygame.draw.rect(SCREEN, self.color, pygame.Rect(int(self.x - self.width/2), int(self.y - self.height/2), self.width, self.height))
+        pygame.draw.rect(SCREEN, self.color, self.rect)
 
     def collides_with_player(self, player):
-        # Circle-rectangle collision
-        closest_x = max(self.x - self.width/2, min(player.x, self.x + self.width/2))
-        closest_y = max(self.y - self.height/2, min(player.y, self.y + self.height/2))
-        dx, dy = player.x - closest_x, player.y - closest_y
-        return dx*dx + dy*dy < player.radius**2
+        # Używamy metody colliderect z Rect gracza i wroga
+        player_rect = player.get_rect()
+        return self.rect.colliderect(player_rect)
 
     def collides_with_bullet(self, bullet):
-        dx = abs(bullet.x - self.x)
-        dy = abs(bullet.y - self.y)
-        if dx > (self.width/2 + bullet.radius) or dy > (self.height/2 + bullet.radius):
-            return False
-        return True
+        bullet_rect = pygame.Rect(bullet.x - bullet.radius, bullet.y - bullet.radius, bullet.radius*2, bullet.radius*2)
+        return self.rect.colliderect(bullet_rect)
 
 
 def draw_text(text, font, color, surface, x, y):
@@ -177,8 +260,14 @@ def draw_text(text, font, color, surface, x, y):
 
 
 def main():
+
+    if player_image_original is None:
+        print("Nie można uruchomić gry - błąd ładowania obrazka gracza.")
+        pygame.quit()
+        sys.exit()
+
     state = MENU
-    player = Player(WIDTH // 2, HEIGHT // 2)
+    player = Player(WIDTH // 2, HEIGHT // 2, player_image_original)
     bullets = []
     enemies = []
     kill_count = 0
@@ -194,7 +283,7 @@ def main():
             if state == MENU and event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
                 # Start game
                 state = PLAYING
-                player = Player(WIDTH // 2, HEIGHT // 2)
+                player = Player(WIDTH // 2, HEIGHT // 2, player_image_original)
                 bullets = []
                 enemies = []
                 kill_count = 0
@@ -228,7 +317,7 @@ def main():
                 last_enemy_spawn = now
 
             # Player movement and shooting
-            player.move(keys)
+            player.update(keys)
             if player.can_shoot():
                 mx, my = pygame.mouse.get_pos()
                 bullets.append(player.shoot((mx, my)))
@@ -255,6 +344,10 @@ def main():
 
             # Draw everything
             player.draw()
+            # ### DODANO: Rysowanie collidera gracza (jako niebieski prostokąt) ###
+            player_rect = player.get_rect()
+            pygame.draw.rect(SCREEN, (255,0,0), player_rect, 1) # Ostatni argument '1' oznacza grubość linii ramki
+            # ### KONIEC DODANO ###
             for bullet in bullets:
                 bullet.draw()
             for enemy in enemies:
