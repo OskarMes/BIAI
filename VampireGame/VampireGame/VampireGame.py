@@ -16,6 +16,7 @@ pygame.display.set_caption("Simple Vampire Survivors")
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
+YELLOW = (255, 165, 0)
 RED = (200, 50, 50)
 GREEN = (50, 200, 50)
 
@@ -221,7 +222,7 @@ class Bullet:
         self.vx = vx
         self.vy = vy
         self.radius = radius
-        self.color = WHITE
+        self.color = YELLOW
 
     def update(self):
         self.x += self.vx
