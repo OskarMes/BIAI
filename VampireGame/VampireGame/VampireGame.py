@@ -275,8 +275,8 @@ class Player:
             pygame.draw.rect(SCREEN, GREEN, (self.x - self.width//2, self.y - self.height//2, self.width, self.height))
 
 
-    #def can_shoot(self):
-    #    return pygame.time.get_ticks() - self.last_shot >= shoot_interval
+    def can_shoot(self):
+        return pygame.time.get_ticks() - self.last_shot >= shoot_interval
 
     def get_rect(self): 
         return pygame.Rect(self.x - self.width // 2, self.y - self.height // 2, self.width, self.height)
