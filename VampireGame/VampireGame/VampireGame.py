@@ -110,10 +110,12 @@ DEFEAT = 'defeat'
 
 # --- Zmienne globalne dla NEAT ---
 GENERATION_COUNT = 0
-DISPLAY_EVERY_N_GENERATIONS = 5
+DISPLAY_EVERY_N_GENERATIONS = 100
 
 class Player:
     def __init__(self, x, y, image):
+        self.boundary_violations = 0 # Licznik prób wyjścia poza ekran
+        self.last_shot_timestamp = 0 # Czas ostatniego strzału
         self.original_image = image
         if self.original_image:
             self.image = self.original_image.copy()
@@ -172,78 +174,93 @@ class Player:
         return Bullet(self.x, self.y, dx * bullet_speed, dy * bullet_speed)
     
 
-    # --- Metody dla AI ---
-    def update_ai(self, net_outputs, target_enemy_for_shooting):
-        threshold = 0.5 # Próg aktywacji dla wyjść sieci (dla sigmoid)
+    # --- dla AI ---
+    def reset_simulation_stats(self): # Wywoływane na początku każdej symulacji AI
+        self.boundary_violations = 0
+        self.last_shot_timestamp = 0
+
+    def can_shoot_auto(self, current_game_time_ms):
+        return current_game_time_ms - self.last_shot_timestamp >= shoot_interval # shoot_interval = 1000 ms
+ 
+    def update_ai(self, net_outputs, target_enemy_for_shooting, current_game_time_ms):
+        threshold = 0.5 
+        delta_x_intended, delta_y_intended = 0, 0 # Zamierzone zmiany pozycji
 
         delta_x, delta_y = 0, 0
-        # Ruch WASD (4 outputy)
-        if net_outputs[0] > threshold:
-            delta_y -= player_speed
-        if net_outputs[1] > threshold:
-            delta_y += player_speed
-        if net_outputs[2] > threshold: 
-            delta_x -= player_speed
-        if net_outputs[3] > threshold: 
-            delta_x += player_speed
 
-        if delta_x != 0 and delta_y != 0:
-            factor = player_speed / math.sqrt(delta_x**2 + delta_y**2)
-            delta_x *= factor
-            delta_y *= factor
-        elif delta_x != 0: 
-             delta_x = math.copysign(player_speed, delta_x)
-        elif delta_y != 0: 
-             delta_y = math.copysign(player_speed, delta_y)
+        if net_outputs[0] > threshold: delta_y_intended -= player_speed
+        if net_outputs[1] > threshold: delta_y_intended += player_speed
+        if net_outputs[2] > threshold: delta_x_intended -= player_speed
+        if net_outputs[3] > threshold: delta_x_intended += player_speed
+
+        if delta_x_intended != 0 and delta_y_intended != 0:
+            factor = player_speed / math.sqrt(delta_x_intended**2 + delta_y_intended**2)
+            delta_x_intended *= factor
+            delta_y_intended *= factor
+        elif delta_x_intended != 0:
+             delta_x_intended = math.copysign(player_speed, delta_x_intended)
+        elif delta_y_intended != 0:
+             delta_y_intended = math.copysign(player_speed, delta_y_intended)
 
 
-        new_x_candidate = self.x + delta_x
-        new_y_candidate = self.y + delta_y
+        predicted_x = self.x + delta_x_intended
+        predicted_y = self.y + delta_y_intended
         half_w = self.width // 2
         half_h = self.height // 2
 
-        if half_w <= new_x_candidate <= WIDTH - half_w:
-            self.x = new_x_candidate
-        if half_h <= new_y_candidate <= HEIGHT - half_h:
-            self.y = new_y_candidate
+        violation_this_frame = False
+        if predicted_x - half_w < 0:
+            self.boundary_violations += 1
+            violation_this_frame = True
+        if predicted_x + half_w > WIDTH:
+            self.boundary_violations += 1
+            violation_this_frame = True
+        if predicted_y - half_h < 0:
+            self.boundary_violations += 1
+            violation_this_frame = True
+        if predicted_y + half_h > HEIGHT:
+            self.boundary_violations += 1
+            violation_this_frame = True
+
+        if half_w <= predicted_x <= WIDTH - half_w:
+            self.x = predicted_x
+        elif predicted_x < half_w : # Jeśli wyszedł za lewą
+            self.x = half_w
+        elif predicted_x > WIDTH - half_w: # Jeśli wyszedł za prawą
+            self.x = WIDTH - half_w
+
+        if half_h <= predicted_y <= HEIGHT - half_h:
+            self.y = predicted_y
+        elif predicted_y < half_h: # Jeśli wyszedł za górną
+            self.y = half_h
+        elif predicted_y > HEIGHT - half_h: # Jeśli wyszedł za dolną
+            self.y = HEIGHT - half_h
 
         bullet_to_add = None
-        if self.original_image and target_enemy_for_shooting: 
+        if target_enemy_for_shooting and self.can_shoot_auto(current_game_time_ms):
+            self.last_shot_timestamp = current_game_time_ms # Zapisz czas tego strzału
+
             dx_aim = target_enemy_for_shooting.x - self.x
             dy_aim = target_enemy_for_shooting.y - self.y
-            if not (dx_aim == 0 and dy_aim == 0):
-                angle_rad = math.atan2(-dy_aim, dx_aim)
+            dist_aim = math.hypot(dx_aim, dy_aim)
+            if dist_aim == 0: dist_aim = 1
+            
+            bullet_vx = (dx_aim / dist_aim) * bullet_speed
+            bullet_vy = (dy_aim / dist_aim) * bullet_speed
+            bullet_to_add = Bullet(self.x, self.y, bullet_vx, bullet_vy)
+        
+        if self.original_image and target_enemy_for_shooting:
+            dx_aim_rot = target_enemy_for_shooting.x - self.x
+            dy_aim_rot = target_enemy_for_shooting.y - self.y
+            if not (dx_aim_rot == 0 and dy_aim_rot == 0):
+                angle_rad = math.atan2(-dy_aim_rot, dx_aim_rot)
                 angle_deg = math.degrees(angle_rad)
                 self.image = pygame.transform.rotate(self.original_image, angle_deg - 90)
-                self.rect = self.image.get_rect(center=(self.x, self.y))
-
-            shoot_decision = net_outputs[4] # Piąty output to strzał
-            if shoot_decision > threshold and self.can_shoot():
-                self.last_shot = pygame.time.get_ticks()
-                dist_aim = math.hypot(dx_aim, dy_aim)
-                if dist_aim == 0: dist_aim = 1
-                bullet_vx = (dx_aim / dist_aim) * bullet_speed
-                bullet_vy = (dy_aim / dist_aim) * bullet_speed
-                bullet_to_add = Bullet(self.x, self.y, bullet_vx, bullet_vy)
-        elif self.original_image: 
+        elif self.original_image: # Brak celu, domyślna rotacja
             self.image = pygame.transform.rotate(self.original_image, 0)
-            self.rect = self.image.get_rect(center=(self.x, self.y))
-        
-        if not self.original_image and target_enemy_for_shooting: 
-            shoot_decision = net_outputs[4]
-            if shoot_decision > threshold and self.can_shoot():
-                self.last_shot = pygame.time.get_ticks()
-                dx_aim = target_enemy_for_shooting.x - self.x
-                dy_aim = target_enemy_for_shooting.y - self.y
-                dist_aim = math.hypot(dx_aim, dy_aim)
-                if dist_aim == 0: dist_aim = 1
-                bullet_vx = (dx_aim / dist_aim) * bullet_speed
-                bullet_vy = (dy_aim / dist_aim) * bullet_speed
-                bullet_to_add = Bullet(self.x, self.y, bullet_vx, bullet_vy)
 
-
-        
-        if self.image: #
+       
+        if self.image: 
              self.rect = self.image.get_rect(center=(int(self.x), int(self.y)))
         else: 
              self.rect.center = (int(self.x), int(self.y))
@@ -258,8 +275,8 @@ class Player:
             pygame.draw.rect(SCREEN, GREEN, (self.x - self.width//2, self.y - self.height//2, self.width, self.height))
 
 
-    def can_shoot(self):
-        return pygame.time.get_ticks() - self.last_shot >= shoot_interval
+    #def can_shoot(self):
+    #    return pygame.time.get_ticks() - self.last_shot >= shoot_interval
 
     def get_rect(self): 
         return pygame.Rect(self.x - self.width // 2, self.y - self.height // 2, self.width, self.height)
@@ -388,12 +405,18 @@ def get_inputs_for_nn(player, enemies, num_visible_enemies=3):
 
     return inputs, target_for_shooting
 
-def calculate_fitness(kill_count, time_survived_ms, game_won):
+def calculate_fitness(kill_count, time_survived_ms, game_won, boundary_violations):
+    fitness = 0.0
     fitness += time_survived_ms / 1000.0  # Punkty za sekundy
     fitness += kill_count * 50.0          # Punkty za zabójstwa
     if game_won:
         fitness += 1000.0                 # Bonus za wygraną
-  
+    
+    penalty_per_violation = 5.0
+    fitness -= boundary_violations * penalty_per_violation
+
+    if fitness < 0: fitness = 0.0 
+
     return fitness
 
 def run_game_for_ai(genome, config, display_game=False, genome_id=None, gen_num=None):
@@ -402,44 +425,45 @@ def run_game_for_ai(genome, config, display_game=False, genome_id=None, gen_num=
     if player_image_original is None or enemy_image_original is None:
         print("Krytyczny błąd AI: Brak obrazków gracza lub wroga.")
         return 0 
-
+    
     player = Player(WIDTH // 2, HEIGHT // 2, player_image_original)
+    player.reset_simulation_stats()
+    
     bullets = []
     enemies = []
     kill_count = 0
-    start_time = pygame.time.get_ticks()
-    last_enemy_spawn = start_time
+    start_time_sim = pygame.time.get_ticks()
+    last_enemy_spawn = start_time_sim
 
     clock = pygame.time.Clock()
     running = True
     game_won = False
 
-  
     frames_stuck = 0
     last_player_pos = (player.x, player.y)
 
     while running:
+        current_game_time_ms_loop = pygame.time.get_ticks() 
         if display_game:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
 
-        now = pygame.time.get_ticks()
-        elapsed_time_ms = now - start_time
+        elapsed_time_ms_sim = current_game_time_ms_loop - start_time_sim # Czas trwania tej symulacji
 
         # --- Logika AI ---
         game_inputs, current_target_for_shooting = get_inputs_for_nn(player, enemies)
         outputs_from_net = net.activate(game_inputs)
-        new_bullet = player.update_ai(outputs_from_net, current_target_for_shooting)
+        new_bullet = player.update_ai(outputs_from_net, current_target_for_shooting, current_game_time_ms_loop)
         if new_bullet:
             bullets.append(new_bullet)
         # -----------------
 
         # Spawn enemies
-        if now - last_enemy_spawn >= enemy_spawn_interval:
+        if current_game_time_ms_loop - last_enemy_spawn >= enemy_spawn_interval:
             enemies.append(Enemy(enemy_image_original))
-            last_enemy_spawn = now
+            last_enemy_spawn = current_game_time_ms_loop
 
         # Update bullets
         for bullet in bullets[:]:
@@ -465,7 +489,7 @@ def run_game_for_ai(genome, config, display_game=False, genome_id=None, gen_num=
             running = False
 
         # Check win condition
-        if elapsed_time_ms >= win_time:
+        if current_game_time_ms_loop >= win_time:
             running = False
             game_won = True
 
@@ -479,7 +503,7 @@ def run_game_for_ai(genome, config, display_game=False, genome_id=None, gen_num=
             running = False # Zakończ grę, jeśli AI utknęło
 
         # zakończ, jeśli gra trwa za długo
-        if elapsed_time_ms > win_time + 10000: # 10 sekund po czasie wygranej
+        if current_game_time_ms_loop > win_time + 10000: # 10 sekund po czasie wygranej
             running = False
             
 
@@ -499,7 +523,7 @@ def run_game_for_ai(genome, config, display_game=False, genome_id=None, gen_num=
                 enemy.draw()
 
             draw_text(f"Kills: {kill_count}", font, WHITE, SCREEN, 10, 10)
-            draw_text(f"Time: {elapsed_time_ms//1000}s", font, WHITE, SCREEN, WIDTH - 150, 10)
+            draw_text(f"Time: {elapsed_time_ms_sim//1000}s", font, WHITE, SCREEN, WIDTH - 150, 10)
             if genome_id is not None and gen_num is not None:
                 draw_text(f"Gen: {gen_num} Genome: {genome_id}", font, WHITE, SCREEN, 10, 40)
                 draw_text(f"Fitness: {genome.fitness:.2f}", font, WHITE, SCREEN, 10, 70)
@@ -510,8 +534,8 @@ def run_game_for_ai(genome, config, display_game=False, genome_id=None, gen_num=
         else: # Jeśli nie wyświetlamy, możemy próbować iść szybciej
             clock.tick(0) # Bez limitu FPS, jeśli nie rysujemy
 
-    fitness = 0.0
-    fitness = calculate_fitness(kill_count, elapsed_time_ms, game_won)
+    
+    fitness = calculate_fitness(kill_count, elapsed_time_ms_sim, game_won, player.boundary_violations)
     return fitness
 
 def eval_genomes(genomes, config):
@@ -552,8 +576,8 @@ def run_neat(config):
     p.add_reporter(neat.StdOutReporter(True)) # Wyświetla podstawowe info w konsoli
     stats = neat.StatisticsReporter() 
     p.add_reporter(stats)
-    p.add_reporter(neat.Checkpointer(generation_interval=5, filename_prefix='neat-checkpoint-'))
-    winner = p.run(eval_genomes, n=500)
+    p.add_reporter(neat.Checkpointer(generation_interval=10, filename_prefix='neat-checkpoint-'))
+    winner = p.run(eval_genomes, n=50)
 
     print('\nNajlepszy znaleziony genom:\n{!s}'.format(winner))
 
@@ -634,7 +658,7 @@ def main_human_player():
                     with open('best_genome.pkl', 'rb') as f:
                         winner_genome = pickle.load(f)
                     local_dir_neat = os.path.dirname(__file__)
-                    config_path_neat = os.path.join(local_dir_neat, 'config.txt')
+                    config_path_neat = os.path.join(local_dir_neat,  'Static','config.txt')
                     config_neat = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
                                         config_path_neat)
