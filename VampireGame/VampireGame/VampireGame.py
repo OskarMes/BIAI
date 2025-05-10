@@ -489,7 +489,7 @@ def run_game_for_ai(genome, config, display_game=False, genome_id=None, gen_num=
             running = False
 
         # Check win condition
-        if current_game_time_ms_loop >= win_time:
+        if elapsed_time_ms_sim >= win_time:
             running = False
             game_won = True
 
@@ -503,7 +503,7 @@ def run_game_for_ai(genome, config, display_game=False, genome_id=None, gen_num=
             running = False # Zakończ grę, jeśli AI utknęło
 
         # zakończ, jeśli gra trwa za długo
-        if current_game_time_ms_loop > win_time + 10000: # 10 sekund po czasie wygranej
+        if elapsed_time_ms_sim > win_time + 10000: # 10 sekund po czasie wygranej
             running = False
             
 
