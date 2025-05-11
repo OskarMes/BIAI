@@ -110,7 +110,8 @@ DEFEAT = 'defeat'
 
 # --- Zmienne globalne dla NEAT ---
 GENERATION_COUNT = 0
-DISPLAY_EVERY_N_GENERATIONS = 100
+DISPLAY_EVERY_N_GENERATIONS = 100 #Nie wyswietlaj
+GENERATION_NUMBER = 100
 
 class Player:
     def __init__(self, x, y, image):
@@ -543,19 +544,13 @@ def eval_genomes(genomes, config):
     GENERATION_COUNT += 1
     display_this_generation = (GENERATION_COUNT % DISPLAY_EVERY_N_GENERATIONS == 0)
 
-  
-
     for i, (genome_id, genome) in enumerate(genomes):
         genome.fitness = 0.0 # Resetuj fitness przed każdą ewaluacją
-
-       
         display_run = display_this_generation and (i == 0) 
-
         if display_run:
             print(f"  Wyświetlanie genomu {genome_id} (pierwszy z generacji {GENERATION_COUNT})...")
-
       
-        num_simulation_runs = 1 
+        num_simulation_runs = 5
         total_fitness_for_genome = 0.0
         for run_idx in range(num_simulation_runs):
             
@@ -576,8 +571,8 @@ def run_neat(config):
     p.add_reporter(neat.StdOutReporter(True)) # Wyświetla podstawowe info w konsoli
     stats = neat.StatisticsReporter() 
     p.add_reporter(stats)
-    p.add_reporter(neat.Checkpointer(generation_interval=10, filename_prefix='neat-checkpoint-'))
-    winner = p.run(eval_genomes, n=50)
+    p.add_reporter(neat.Checkpointer(generation_interval=25, filename_prefix='neat-checkpoint-'))
+    winner = p.run(eval_genomes, n=GENERATION_NUMBER)
 
     print('\nNajlepszy znaleziony genom:\n{!s}'.format(winner))
 
