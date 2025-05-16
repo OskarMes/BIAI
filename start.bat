@@ -13,6 +13,9 @@ if "%VIRTUAL_ENV%"=="" (
 )
 
 
+echo [+] Instalacja wymaganych bibliotek
+pip install -r requirements.txt
+
 echo [+] Zmiana katalogu na VampireGame...
 cd VampireGame
 
